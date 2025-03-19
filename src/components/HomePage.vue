@@ -1,15 +1,32 @@
 <template>
   <v-container class="fill-height">
-    <v-responsive class="align-center fill-height mx-auto">
-      <v-row style="margin: 5px;">
+    <v-responsive class="align-center fill-height mx-auto" style="padding: 5px;">
+      <v-row v-if="errorMessage">
+        <v-col cols="12">
+          <div class="error-box">
+            {{ errorMessage }}
+          </div>
+        </v-col>
+      </v-row>
+
+      <v-row>
         <v-col cols="2">
           <v-btn
             variant="outlined"
             class="w-100 pa-1"
             color="blue"
             @click="onGenerate"
+            :disabled="isLoading"
           >
-            Generate
+            <!-- If you want an inline loader, you could do: -->
+            <template #prepend v-if="isLoading">
+              <v-progress-circular
+                size="20"
+                indeterminate
+                class="me-2"
+              />
+            </template>
+            {{ isLoading ? 'Please wait...' : 'Generate' }}
           </v-btn>
 
           <v-select
@@ -30,19 +47,19 @@
             density="compact"
           />
 
-          <v-text-field
-            v-if="['PNG','SVG'].includes(exportAs)"
-            v-model="attachmentFilename"
-            label="Attachment filename"
+          <v-select
+            v-model="exportAs"
+            label="Export as"
+            :items="['PNG', 'SVG', 'Text file']"
             variant="outlined"
             class="pa-2"
             density="compact"
           />
 
-          <v-select
-            v-model="exportAs"
-            label="Export as"
-            :items="['PNG', 'SVG', 'Text file']"
+          <v-text-field
+            v-if="['PNG','SVG'].includes(exportAs)"
+            v-model="attachmentFilename"
+            label="Attachment filename"
             variant="outlined"
             class="pa-2"
             density="compact"
@@ -66,18 +83,34 @@
           />
         </v-col>
 
-        <v-row>
-          <v-col cols="6">
-            <v-textarea
-              v-model="leftText"
-              :label="labels.first"
-              variant="outlined"
-              no-resize
-              rows="40"
-            />
-          </v-col>
+        <!-- Column 2 (5 cols) for the "left" textarea -->
+        <v-col cols="5">
+          <!-- Left textarea (unchanged) -->
+          <v-textarea
+            v-model="leftText"
+            :label="labels.first"
+            variant="outlined"
+            no-resize
+            rows="40"
+          />
+        </v-col>
 
-          <v-col cols="6">
+        <v-col cols="5">
+          <!-- If it's an image response, show the image wrapper -->
+          <template v-if="isImageResponse">
+            <div class="image-wrapper" @click="openImageInNewTab">
+              <img
+                :src="imageUrl"
+                alt="Server response image"
+              />
+              <div class="hover-label">
+                Show full size
+              </div>
+            </div>
+          </template>
+
+          <!-- Otherwise, show rightText in a textarea -->
+          <template v-else>
             <v-textarea
               v-model="rightText"
               :label="labels.second"
@@ -86,20 +119,23 @@
               rows="40"
               readonly
             />
-          </v-col>
+          </template>
+        </v-col>
+      </v-row>
 
-          <v-col cols="12">
-            <v-textarea
-              :model-value="requestPreview"
-              label="API request"
-              variant="outlined"
-              no-resize
-              rows="10"
-              auto-grow
-              readonly
-            />
-          </v-col>
-        </v-row>
+      <v-row>
+        <v-col cols="12">
+          <!-- Request preview (unchanged) -->
+          <v-textarea
+            :model-value="requestPreview"
+            label="API request"
+            variant="outlined"
+            no-resize
+            rows="10"
+            auto-grow
+            readonly
+          />
+        </v-col>
       </v-row>
     </v-responsive>
   </v-container>
@@ -118,8 +154,10 @@ const showBindings = ref(false)
 const reduceSliceClasses = ref(false)
 const leftText = ref('')
 const rightText = ref('')
-// Filename defaults to "patient-def.png" but user can change it
 const attachmentFilename = ref('patient-def.png')
+
+const isImageResponse = ref(false)
+const imageUrl = ref(null)
 
 const labels = computed(() => {
   if (!mode.value.includes('->')) {
@@ -129,11 +167,30 @@ const labels = computed(() => {
   return { first: left, second: right }
 })
 
-// Dynamically build the textual preview of the POST request
+function openImageInNewTab() {
+  if (imageUrl.value) {
+    window.open(imageUrl.value, '_blank')
+  }
+}
+
+// Loading and errors
+const isLoading = ref(false)
+const errorMessage = ref('')
+
+// Clear error after 5s
+function showErrorTemporary(msg) {
+  errorMessage.value = msg
+  setTimeout(() => {
+    errorMessage.value = ''
+  }, 5000)
+}
+
+// Request preview logic
 const requestPreview = computed(() => {
   const endpoint = mode.value === 'FHIR -> UML' ? '/api/fhir2uml' : '/api/uml2fhir'
   const fullUrl = baseURL + endpoint
   const acceptHeader = `application/json; view=${view.value.toLowerCase()}`
+
   let contentType
   if (exportAs.value === 'PNG') {
     contentType = 'image/png'
@@ -143,7 +200,6 @@ const requestPreview = computed(() => {
     contentType = 'text/plain'
   }
 
-  // Conditionally add Content-Disposition if PNG or SVG
   const lines = [
     `POST ${fullUrl}`,
     `Accept: ${acceptHeader}`,
@@ -154,7 +210,6 @@ const requestPreview = computed(() => {
     lines.push(`Content-Disposition: attachment; filename="${attachmentFilename.value}"`)
   }
 
-  // Include custom X- headers
   lines.push(
     `X-Hide-Removed-Objects: ${hideRemovedObjects.value ? 'true' : 'false'}`,
     `X-Show-Constraints: ${showConstraints.value ? 'true' : 'false'}`,
@@ -165,7 +220,10 @@ const requestPreview = computed(() => {
   return lines.join('\n')
 })
 
-function onGenerate() {
+async function onGenerate() {
+  isLoading.value = true
+  errorMessage.value = ''
+
   const endpoint = mode.value === 'FHIR -> UML' ? '/api/fhir2uml' : '/api/uml2fhir'
   const url = baseURL + endpoint
   const acceptHeader = `application/json; view=${view.value.toLowerCase()}`
@@ -179,7 +237,6 @@ function onGenerate() {
     contentType = 'text/plain'
   }
 
-  // Build headers object
   const headers = {
     Accept: acceptHeader,
     'Content-Type': contentType,
@@ -189,48 +246,112 @@ function onGenerate() {
     'X-Reduce-Slice-Classes': reduceSliceClasses.value ? 'true' : 'false'
   }
 
-  // Conditionally add Content-Disposition
   if (['PNG','SVG'].includes(exportAs.value)) {
     headers['Content-Disposition'] = `attachment; filename="${attachmentFilename.value}"`
   }
 
-  fetch(url, {
-    method: 'POST',
-    headers,
-    body: leftText.value
-  })
-    .then(async response => {
-      // Check Content-Type in the response
-      const contentType = response.headers.get('Content-Type') || ''
-      if (contentType.includes('text')) {
-        // If it's text, read as text
-        const text = await response.text()
-        // Put it in the second textarea
-        rightText.value = text
-      } else if (contentType.includes('image')) {
-        // If it's an image, download it
-        const blob = await response.blob()
-        const downloadUrl = URL.createObjectURL(blob)
+  // 20s timeout
+  let didTimeout = false
+  const timeoutId = setTimeout(() => {
+    didTimeout = true
+    isLoading.value = false
+    showErrorTemporary('Request timed out after 20 seconds.')
+  }, 20000)
 
-        // Create a hidden link element and simulate a click
-        const link = document.createElement('a')
-        link.href = downloadUrl
-        link.download = attachmentFilename.value  // e.g. "patient-def.png"
-        document.body.appendChild(link)
-        link.click()
-        link.remove()
-        URL.revokeObjectURL(downloadUrl)
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: leftText.value
+    })
 
-        // Clear the second textarea if you want
-        rightText.value = 'Image downloaded'
-      } else {
-        // Handle other content types or unknown content
-        const text = await response.text()
-        rightText.value = `Unknown content-type:\n${contentType}\n\n${text}`
-      }
-    })
-    .catch(err => {
-      rightText.value = `Error: ${err}`
-    })
+    // If the timeout already triggered, skip parsing
+    if (didTimeout) return
+
+    clearTimeout(timeoutId)
+
+    if (!response.ok) {
+      // e.g., 4xx or 5xx
+      const errorText = await response.text()
+      throw new Error(`HTTP ${response.status}: ${errorText}`)
+    }
+
+    const respContentType = response.headers.get('Content-Type') || ''
+
+    if (respContentType.includes('text')) {
+      const text = await response.text()
+      rightText.value = text
+      isImageResponse.value = false
+      imageUrl.value = null
+    } else if (respContentType.includes('image')) {
+      const blob = await response.blob()
+      imageUrl.value = URL.createObjectURL(blob)
+      isImageResponse.value = true
+      rightText.value = ''
+    } else {
+      const text = await response.text()
+      rightText.value = `Unknown content-type:\n${respContentType}\n\n${text}`
+      isImageResponse.value = false
+      imageUrl.value = null
+    }
+  } catch (error) {
+    if (!didTimeout) {
+      clearTimeout(timeoutId)
+      showErrorTemporary(`Error: ${error}`)
+    }
+  } finally {
+    isLoading.value = false
+  }
 }
 </script>
+
+<style scoped>
+/* Example of how you might style the error box */
+.error-box {
+  background-color: #fdd;
+  color: #900;
+  padding: 8px;
+  border: 1px solid #f99;
+  margin-top: 8px;
+  border-radius: 4px;
+}
+
+/* Existing image-wrapper styles, etc. remain the same */
+
+.image-wrapper {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  cursor: pointer;
+}
+
+.image-wrapper img {
+  display: block;
+  max-width: 100%;
+  max-height: 700px;
+  object-fit: contain;
+  border: 1px solid #ccc;
+  padding: 4px;
+  transition: box-shadow 0.2s ease;
+}
+
+.image-wrapper:hover img {
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.3);
+}
+
+.hover-label {
+  display: none;
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  background-color: rgba(0,0,0,0.6);
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8em;
+}
+
+.image-wrapper:hover .hover-label {
+  display: block;
+}
+</style>

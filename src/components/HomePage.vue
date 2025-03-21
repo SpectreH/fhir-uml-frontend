@@ -81,6 +81,10 @@
             v-model="reduceSliceClasses"
             label="Reduce slice classes"
           />
+          <v-checkbox
+            v-model="hideLegend"
+            label="Hide legend"
+          />
         </v-col>
 
         <!-- Column 2 (5 cols) for the "left" textarea -->
@@ -156,6 +160,7 @@ const leftText = ref('')
 const rightText = ref('')
 const attachmentFilename = ref('patient-def.png')
 
+const hideLegend = ref(false)
 const isImageResponse = ref(false)
 const imageUrl = ref(null)
 
@@ -214,7 +219,8 @@ const requestPreview = computed(() => {
     `X-Hide-Removed-Objects: ${hideRemovedObjects.value ? 'true' : 'false'}`,
     `X-Show-Constraints: ${showConstraints.value ? 'true' : 'false'}`,
     `X-Show-Bindings: ${showBindings.value ? 'true' : 'false'}`,
-    `X-Reduce-Slice-Classes: ${reduceSliceClasses.value ? 'true' : 'false'}`
+    `X-Reduce-Slice-Classes: ${reduceSliceClasses.value ? 'true' : 'false'}`,
+    `X-Hide-Legend: ${hideLegend.value ? 'true' : 'false'}`
   )
 
   return lines.join('\n')
@@ -243,7 +249,8 @@ async function onGenerate() {
     'X-Hide-Removed-Objects': hideRemovedObjects.value ? 'true' : 'false',
     'X-Show-Constraints': showConstraints.value ? 'true' : 'false',
     'X-Show-Bindings': showBindings.value ? 'true' : 'false',
-    'X-Reduce-Slice-Classes': reduceSliceClasses.value ? 'true' : 'false'
+    'X-Reduce-Slice-Classes': reduceSliceClasses.value ? 'true' : 'false',
+    'X-Hide-Legend': hideLegend.value ? 'true' : 'false',
   }
 
   if (['PNG','SVG'].includes(exportAs.value)) {

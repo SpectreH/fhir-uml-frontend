@@ -148,7 +148,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 
-const baseURL = 'http://193.34.69.248:8080'
+const baseURL = import.meta.env.VITE_APP_BASE_URL;
 const mode = ref('FHIR -> UML')
 const view = ref('Snapshot')
 const exportAs = ref('PNG')
